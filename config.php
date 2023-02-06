@@ -15,6 +15,7 @@
  * Directories & URLS
  */
 define('INTERFACES_DIR_TMP',        '/tmp');
+define('INTERFACES_DIR_ST_RAW',     __DIR__ . "/sourcetax/raw");
 
 
 ?>
