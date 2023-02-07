@@ -8,7 +8,7 @@
  * @package    rm-core-interfaces
  * @author     Andreas
  * @copyright  2023 RM Group AG
- * @version    0.2.0
+ * @version    0.9.0
  */
 
 
@@ -21,6 +21,18 @@ require_once __DIR__ . "/../config.php";
 
 // Composer Autoloader
 require_once __DIR__ . "/../vendor/autoload.php";
+
+
+/*
+ * Establish Connection to SQL Server
+ */
+$sql_connection_info = Array(
+                            "Database"  =>  INTERFACES_SQL_DATABASE,
+                            "UID"       =>  INTERFACES_SQL_USERNAME,
+                            "PWD"       =>  INTERFACES_SQL_PASSWORD,
+                            "TrustServerCertificate" => 'yes');
+
+$sql_connection = sqlsrv_connect(INTERFACES_SQL_SERVER, $sql_connection_info);
 
 
 /*
@@ -78,6 +90,9 @@ foreach($raw_files as $raw_file) {
 
         elseif ($record_type == "06") {
 
+            // Record ID
+            $record_taxid = trim(substr($raw_line, 0, 9));
+
             // Get Record: Canton
             $record_canton = substr($raw_line, 4, 2);
 
@@ -90,6 +105,10 @@ foreach($raw_files as $raw_file) {
             // Get Record: Chirch Tax
             $record_chirchtax = substr($raw_line, 8, 1);
 
+            // Get Record: Valid From
+            $record_validfrom = substr($raw_line, 16, 4) . "-" . substr($raw_line, 20, 2) . "-" . substr($raw_line, 22, 2);
+            $record_period = substr($record_validfrom, 0, 4);
+
             // Get Record: Salary (Start)
             $record_salary = intval(substr($raw_line, 24, 9)) / 100;
 
@@ -97,7 +116,7 @@ foreach($raw_files as $raw_file) {
             $record_salarystep = intval(substr($raw_line, 33, 9)) / 100;
 
             // Get Record: Minimum Tax
-            $record_mintax = intval(substr($raw_line, 45, 9));
+            $record_mintax = intval(substr($raw_line, 45, 9)) / 100;
 
             // Get Record: Tax Rate
             $record_taxrate = intval(substr($raw_line, 54, 5)) / 100;
@@ -106,25 +125,64 @@ foreach($raw_files as $raw_file) {
             echo("Found Record Type 06 for Canton: " . $record_canton . "\n");
 
             // Expand Records Array
-            $tax_records[] = Array(
+            $tax_record = Array(
 
+                'taxid'         => $record_taxid,
+                'period'        => $record_period,
+                'validfrom'     => $record_validfrom,
                 'canton'        => $record_canton,
-                'tarif'         => $record_tariff,
+                'tariff'        => $record_tariff,
                 'children'      => $record_children,
                 'chirchtax'     => $record_chirchtax,
-                'stalary'       => $record_salary,
-                'stalarystep'   => $record_salarystep,
+                'salary'        => $record_salary,
+                'salarystep'    => $record_salarystep,
                 'mintax'        => $record_mintax,
                 'taxrate'       => $record_taxrate,
 
             );
 
+            $sql = prepare_sql(INTERFACE_TPLS_ST_INSERT, $tax_record);
+
+            $stmt = sqlsrv_prepare( $sql_connection, $sql );
+
+            if( sqlsrv_execute( $stmt ) === false ) {
+                die( print_r( sqlsrv_errors(), true));
+            }
+
         }
 
     }
-    var_dump($tax_records[250]);
+    //var_dump($tax_records[250]);
 
     unset($tax_records);
 
 }
 
+
+/*
+ * Prepare SQL Statement by Template
+ */
+function prepare_sql($template, $data) {
+
+    /*
+     * Read Template Content
+     */
+    $sql = file_get_contents(INTERFACES_DIR_ST_SQL . "/" . $template);
+
+
+    /*
+     * Replace Values
+     */
+    foreach($data as $key => $value) {
+
+        $sql = str_replace("%$key%", $value, $sql);
+
+    }
+
+
+    /*
+     * Return Finalized SQL Statement
+     */
+    return $sql;
+
+}
